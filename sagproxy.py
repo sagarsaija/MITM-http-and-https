@@ -1,21 +1,39 @@
 import sys, os, threading, logging, argparse, urlparse, socket, SocketServer
 import thread
-from time import sleep
+import time
 import Queue
 import subprocess
 import ssl
-from subprocess import Popen, PIPE
-#import openssl
-#from OpenSSL import SSL
+from subprocess import Popen, PIPE, STDOUT
+import io
+import struct
+import traceback
+
 
 MAXCON = 10     # max connection queues to hold
 MAXBUF = 4096   # buffer size
-#port = 8080
-#ssl_certfile = "/Users/sagarsaija/Desktop/lab3/ssl_certfile"
-# logging.basicConfig(level=logging.INFO)
+
+'''
+#create key
+key = open("ca.key","w")
+my_key = Popen(["openssl", "genrsa", "1024"], stdout = PIPE)#, stdout = PIPE)#, "-new", "-key", f_key, "-subj", "/CN=%s" % tt], stdout=PIPE)
+for line in my_key.stdout:
+    key.write(line)
+key.close()
+#create root certificate
+certificate = open("ca.crt","w")
+my_cert = Popen("openssl req -new -x509 -days 3650 -key ca.key -out ca.crt".split(), stdout=PIPE)
+#my_cert = p_enc.communicate()[0]
+#my_cert = Popen(["openssl", "x509", "-req", "-days", "365", "-signkey", my_key], stdout=PIPE)
+for line in my_cert.stdout:
+    certificate.write(line)
+certificate.close()
+'''
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 log = False
+
 
 # exit codes
 SUCCESS = 0     # operation successful
@@ -33,16 +51,20 @@ class ProxyRequestHandler:
     def __init__(self, port, numworker, timeout):
         self.port = port
         self.numworker = numworker  #handle numworker with max and block
+        self.workerQ = Queue.Queue()
+        self.masterQ = Queue.Queue()
+
+        self.Pool = []
         self.timeout = timeout
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         self.thread_iterator = 0
-
+        self.f_lock = threading.Lock()
         self.cakey = 'ca.key'
         self.cacert = 'ca.crt'
         self.certkey = 'cert.key'
-        self.certdir = 'certs/'
+        self.certdir = 'junk/'
 
     def run(self):
         #log_msg('Starting HTTP proxy server...', 'debug')
@@ -59,13 +81,72 @@ class ProxyRequestHandler:
         while 1:
             try:
                 conn, addr = self.server.accept()
-                thread.start_new_thread(self.handle_proxy_request, (conn, addr))
+                #thread.start_new_thread(self.handle_proxy_request, (conn, addr))
+                #debug
+                if(self.numworker == 10):
+                    thread.start_new_thread(self.handle_proxy_request, (conn, addr))
+                else:
+                    self.start_pool_threads(self.numworker,conn,addr)
             except KeyboardInterrupt:
                 self.server.close()
                 print "KeyboardInterrupt\n"
                 exit_msg('Closing connection with server.', SUCCESS)
                 #sys.exit(0)
         self.server.close()
+    #thread Pooling
+    def start_pool_threads(self, numworker, conn, addr):
+        for i in range(numworker):
+            threadQ = threading.Thread(target=self.process_queue, args = (conn, addr))
+            threadQ.start()
+            self.Pool.append(threadQ)
+    def process_queue(self,conn,addr):
+        thread.start_new_thread(self.handle_proxy_request, (conn, addr))
+        print "start_new_thread"
+        flag = 'ok'
+        while flag != 'stop':
+            try:
+                flag,item=self.masterQ.get()
+                if flag=='ok':
+                    print "start_flag"
+                    newdata=item
+                    self.workerQ.put(newdata)
+            except:
+                self.errorQ.put(err_msg())
+    def err_msg(self):
+        trace= sys.exc_info()[2]
+        try:
+            exc_value=str(sys.exc_value)
+        except:
+            exc_value=''
+        return str(traceback.format_tb(trace)),str(sys.exc_type),exc_value
+    def get_errors(self):
+        try:
+            while 1:
+                yield errorQ.get_nowait()
+        except Queue.Empty:
+            pass
+    def get(self):
+        return self.workerQ.get()
+    def put(self,data,flag='ok'):
+        self.masterQ.put([flag,data])
+    def get_all(self):
+        try:
+            while 1:
+                yield self.workerQ.get_nowait()
+        except Queue.Empty:
+            pass
+    def stop_threads(self):
+        for i in range(len(self.Pool)):
+            self.masterQ.put(('stop',None))
+        while self.Pool:
+            time.sleep(1)
+            for index,the_thread in enumerate(self.Pool):
+                if the_thread.isAlive():
+                    continue
+                else:
+                    del self.Pool[index]
+                break
+
     def handle_proxy_request(self, conn, addr):
         data = conn.recv(MAXBUF)
         #log_msg(data, 'info')
@@ -77,52 +158,77 @@ class ProxyRequestHandler:
 
         if port == 443:
             print "Connect to HTTPS:", hostname, port
-            #self.handle_https(hostname,port,data)
-            #another = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            #another.connect((addr,80)
             conn.send("HTTP/1.1 200 OK\r\n\r\n")
-            hello = conn.recv(MAXBUF)
-            #print "STRING: " + reply
-            #get SNI, parse
-            #SNI = self.parse_SNI(hello)
-            #print "SNI\n"
-            #print SNI
-            #SNI = hostname
-            #context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            #context.wrap_socket(downsock, do_handshake_on_connect=False, server_hostname=rhost)
-            #proxy_key = open()
-            #ssl_certfile = open('ssl_certfile','w')
+            real_data = conn.recv(MAXBUF)
+            SNI = None
+            if real_data.startswith('\x16\x03'):
+                stream = io.BytesIO(real_data)
+                stream.read(0x2b)
+                session_id_length = ord(stream.read(1))
+                stream.read(session_id_length)
+                cipher_suites_length, = struct.unpack('>h', stream.read(2))
+                stream.read(cipher_suites_length+2)
+                extensions_length, = struct.unpack('>h', stream.read(2))
+                while True:
+                    data = stream.read(2)
+                    if not data:
+                        break
+                    etype, = struct.unpack('>h', data)
+                    elen, = struct.unpack('>h', stream.read(2))
+                    edata = stream.read(elen)
+                    if etype == 0:
+                        server_name = edata[5:]
+                        SNI = server_name
+            print "SNI: " #SNI
+            print SNI
+            if SNI is None:
+                SNI = hostname
             proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             proxy_socket.connect((unicode(hostname), port))
             IP = socket.gethostbyname(hostname)
             print "IP :" + IP
-            #ssl_proxy_socket = ssl.wrap_socket(proxy_socket,ca_certs=ssl_certfile,server_side=False,cert_reqs=ssl.CERT_REQUIRED,ssl_version=ssl.PROTOCOL_TLSv1, ciphers="ADH-AES256-SHA",do_handshake_on_connect=True)
-            #sslprotocols = ssl.PROTOCOL_SSLv3#ssl.PROTOCOL_TLSv1
-            #sslcontext = ssl.SSLContext(sslprotocols)
-            sslcontext = ssl.create_default_context()
-            sslcontext.verify_mode = ssl.CERT_REQUIRED
 
-            #ssl_proxy_socket = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            #ssl_proxy_socket = ssl.wrap_socket(proxy_socket)#,do_handshake_on_connect=False)
-            ssl_proxy_socket = sslcontext.wrap_socket(proxy_socket,do_handshake_on_connect=True, server_hostname = hostname)#,server_side=False, do_handshake_on_connect=True)
-            #ssl_proxy_socket.connect((unicode(SNI), port))
-            #ssl_proxy_socket.do_handshake()
-            #sslcontext.do_handshake()
-            cert = ssl_proxy_socket.getpeercert()
-            #cert = ssl_proxy_socket.get_server_certificate((unicode(SNI), port))
-            print "hello"
-            print cert
-            ssl_proxy_socket.sendall(hello)
-            ssl_proxy_socket.close()
+            real_context = ssl.create_default_context()
+            real_context.verify_mode = ssl.CERT_REQUIRED
+
+            real_proxy_socket = real_context.wrap_socket(proxy_socket,do_handshake_on_connect=True, server_hostname = hostname)#,server_side=False, do_handshake_on_connect=True)
+
+            real_cert = real_proxy_socket.getpeercert()
+            print real_cert
+            CN = None
+            AN = None
+            if real_cert["subject"][-1][0][0] == 'commonName':
+                CN = real_cert["subject"][-1][0][1]
+                print "COMMONNAMEFOUND"+str(CN)
+            else:
+                CN = hostname
+            if real_cert.has_key("subjectAltName"):
+                for typ, val in real_cert["subjectAltName"]:
+                    if typ == "DNS" and val == hostname:
+                        AN = val
+
+            print "CN :"
+            print CN
+            print "AN :"
+            print AN
+            #debug generate fake cert using CN, AN, and SNI
+            fake_cert = real_cert
+
+            fake_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            fake_context.verify_mode = ssl.CERT_REQUIRED
+            fake_proxy_socket = fake_context.wrap_socket(self.server, fake_cert,do_handshake_on_connect=True)#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
+
+            real_proxy_socket.close()
+            fake_proxy_socket.close()
             proxy_socket.close()
-            #ssl_proxy_socket.
-            #context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            conn.close()
 
         else:
             print "Connect to HTTP:", hostname, port
             try:
                 proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 proxy_socket.connect((unicode(hostname), port))
+                #proxy_socket.connect((hostname, port))
                 proxy_socket.send(data)
                 #send http request from proxy
                 while 1:
@@ -141,70 +247,6 @@ class ProxyRequestHandler:
                     conn.close()
                 print "RUNTIME ERROR: ", message
                 sys.exit(1)
-
-        '''
-        socket_file, counter = conn.makefile(),0
-        out_lines, destination = [], None
-        #print "4\n"
-        hostname, port = None, None
-        for l in socket_file.readlines():
-            counter += 1
-            out_lines.append(l)
-            #if counter is 1:
-            #    first_line_list = l.split(' ')#request
-            #    if  first_line_list[0] in ('GET','ALIVE'):
-            if counter is 2: #destination line
-                print 'LINE '+l
-                line_list = l.split(':')
-                if len(line_list) is 3:
-                    hostname, port = (l.split(':')[-2]).strip(), int(l.split(':')[-1])
-                    print "hello"
-                elif len(line_list) is 2:
-                    hostname, port = line_list[-1].strip(), None
-                    print "world"
-                    if line_list[0] in ("LINE", "CONNECT"):
-                        pass
-
-                #print port
-        #once we have data and destination
-        #connect to server socket from hostname request
-        try:
-            proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            if port is None:
-                proxy_socket.connect((unicode(hostname), 80))
-                print 'HOSTNAME: '+hostname
-            else:
-                proxy_socket.connect(((unicode(hostname), port)))
-
-            proxy_socket_file =proxy_socket.makefile()
-            a_string = ""
-            #send http request from proxy
-            for l in out_lines:
-                proxy_socket.sendall(l)
-                a_string += l
-            print "a_string: "+ a_string
-            k = ''
-            #recieve
-            for l in proxy_socket_file.readlines():
-                k += l
-
-
-            print "RETURNDATA: "+k
-            #send it back to phone
-            i = conn.sendall(k)
-            print "NUMBER OF BYTES SENT TO PHONE:"
-            print i
-            proxy_socket_file.close()
-            proxy_socket.close()
-            socket_file.close()
-        except socket.error, (value, message):
-            if proxy_socket:
-              proxy_socket.close()
-            if conn:
-              conn.close()
-            print "Runtime Error:", message
-            sys.exit(1)
-        '''
     def parse(self, hostname, port, data):
         try:
             first_line = data.split('\n')[0]
@@ -229,80 +271,6 @@ class ProxyRequestHandler:
         except Exception, e:
             pass
         return hostname, port
-        '''
-        host = ''
-        port = 0
-        try:
-            get = data.split('\n')[0].split()[1]
-            if get.find('://') > 0:
-                get = get[7:]
-
-            portstart = get.find(':')
-            hostend = get.find('/')
-
-            if portstart < 0 or hostend < portstart:
-                port = 80
-                host = get[:hostend]
-            else:
-                port = int((get[(portstart + 1):])[:hostend - portstart - 1])
-                host = get[:portstart]
-
-        except Exception, e:
-            pass
-
-        return host, port
-        '''
-    def parse_SNI(self,hello):
-        #print hello
-        #h = unicode(hello)
-        #print h
-        #for l in hello:
-        split_url = list(hello)
-        ret_url = ""
-
-        #i = 96
-        #start_pt = split_url[i] + split_url[i+1] + split_url[i+2]
-        #print "START"
-        #print start_pt
-        '''
-        start_pt = split_url[i]
-        while(ret_url[-1] != "\n"):
-            ret_url += start_pt
-            i = i + 1
-            start_pt = split_url[i]
-        '''
-        '''
-        while(start_pt != '.'):
-            ret_url += start_pt
-            i = i + 1
-            start_pt = split_url[i]
-        tmp_dom = ret_url[-3]+ret_url[-2]+ret_url[-1]
-        print "TMP"
-        print tmp_dom
-        if tmp_dom not in ("com","net","edu","org"):
-            while(start_pt != '.'):
-                ret_url += start_pt
-                i = i + 1
-                start_pt = split_url[i]
-        '''
-
-        return ret_url
-        #p = h[96]
-        #c = h[97]
-        #print "DAM MAMMA"
-        #print p
-        #print c
-
-    def handle_https(self,hostname,port,data):
-        print "CREATE CERTIFICATE"
-        #keychain
-        #keychain = Popen(["openssl", "req", "-new", "-key", self.certkey, "-subj", "/CN=%s" % hostname], stdout=PIPE)
-        #print p1
-        #certificate
-        #certificate = Popen(["openssl", "x509", "-req", "-days", "3650", "-CA", self.cacert, "-CAkey", self.cakey, "-set_serial", epoch, "-out", certpath], stdin=p1.stdout, stderr=PIPE)
-        #self.s.send("HTTP/1.1 200 OK\r\n\r\n")
-        #reply = self.server.recv(MAXBUF)
-        #print reply
 
 # logs info message if logging is set to True, or logs msg as debug
 def log_msg(msg, l_type):
