@@ -224,8 +224,6 @@ class ProxyRequestHandler:
             #print AN_tmp_list
             #debug generate fake cert using CN, AN, and SNI
             fake_key = OpenSSL.crypto.PKey()#os.path.expanduser('~/ca.key')#root_key #OpenSSL.crypto.PKey()
-            #print "NIGGER"
-            #print root_key
             fake_key.generate_key(OpenSSL.crypto.TYPE_RSA, 1028)
             #fake_cert = real_cert
             fake_cert = OpenSSL.crypto.X509()
@@ -233,15 +231,13 @@ class ProxyRequestHandler:
             fake_cert.set_pubkey(fake_key)
             fake_cert.get_subject().CN = CN
             #fake_cert.get_subject().AN = AN
+
+            #load AN to fake_cert
             #if AN_tmp_list:
                 #fake_cert.add_extensions([crypto.X509Extension("subjectAltName", False, ",".join(AN_tmp_list))])
-            #
-            #print "NIGGER"
             #print fake_cert
             fake_cert.sign(fake_key, 'sha1')
             #fake_cert.get_all().
-            #print "NIGGER"
-            #print type(lala)
 
             fake_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
             fake_context.verify_mode = ssl.CERT_REQUIRED
