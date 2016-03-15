@@ -8,10 +8,13 @@ from subprocess import Popen, PIPE, STDOUT
 import io
 import struct
 import traceback
-
+import OpenSSL
+from OpenSSL import crypto
 
 MAXCON = 10     # max connection queues to hold
 MAXBUF = 4096   # buffer size
+root_key = "./ca.key"
+root_crt = "./ca.crt"
 
 '''
 #create key
@@ -29,7 +32,9 @@ for line in my_cert.stdout:
     certificate.write(line)
 certificate.close()
 '''
-
+#gundo = socket.gethostbyname("www.yahoo.com")
+#print "CHIEF"
+#print gundo
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 log = False
@@ -194,9 +199,9 @@ class ProxyRequestHandler:
             real_proxy_socket = real_context.wrap_socket(proxy_socket,do_handshake_on_connect=True, server_hostname = hostname)#,server_side=False, do_handshake_on_connect=True)
 
             real_cert = real_proxy_socket.getpeercert()
-            print real_cert
+            #print real_cert
             CN = None
-            AN = None
+            AN = []
             if real_cert["subject"][-1][0][0] == 'commonName':
                 CN = real_cert["subject"][-1][0][1]
                 print "COMMONNAMEFOUND"+str(CN)
@@ -204,19 +209,44 @@ class ProxyRequestHandler:
                 CN = hostname
             if real_cert.has_key("subjectAltName"):
                 for typ, val in real_cert["subjectAltName"]:
-                    if typ == "DNS" and val == hostname:
-                        AN = val
+                    if typ == "DNS": #and val == hostname:
+                        AN.append(val)
 
-            print "CN :"
-            print CN
-            print "AN :"
-            print AN
+            #print "CN :"
+            #print CN
+            #print "AN :"
+            #print AN
+            AN_tmp_list = []
+            for i in AN:
+                AN_tmp_list.append("DNS: %s" % i)
+            AN_tmp_list = ", ".join(AN_tmp_list)
+            #print "AN_tmp_list"
+            #print AN_tmp_list
             #debug generate fake cert using CN, AN, and SNI
-            fake_cert = real_cert
+            fake_key = OpenSSL.crypto.PKey()#os.path.expanduser('~/ca.key')#root_key #OpenSSL.crypto.PKey()
+            #print "NIGGER"
+            #print root_key
+            fake_key.generate_key(OpenSSL.crypto.TYPE_RSA, 1028)
+            #fake_cert = real_cert
+            fake_cert = OpenSSL.crypto.X509()
+            #fake_cert.set_version("3L")
+            fake_cert.set_pubkey(fake_key)
+            fake_cert.get_subject().CN = CN
+            #fake_cert.get_subject().AN = AN
+            #if AN_tmp_list:
+                #fake_cert.add_extensions([crypto.X509Extension("subjectAltName", False, ",".join(AN_tmp_list))])
+            #
+            #print "NIGGER"
+            #print fake_cert
+            fake_cert.sign(fake_key, 'sha1')
+            #fake_cert.get_all().
+            #print "NIGGER"
+            #print type(lala)
 
             fake_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
             fake_context.verify_mode = ssl.CERT_REQUIRED
             fake_proxy_socket = fake_context.wrap_socket(self.server, fake_cert,do_handshake_on_connect=True)#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
+            #pass cert from client with request
 
             real_proxy_socket.close()
             fake_proxy_socket.close()
