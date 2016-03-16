@@ -20,6 +20,12 @@ root_key = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.key"
 root_cert = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.crt"
 #= os.path.join(os.path.dirname(__file__), 'ca.cert')
 
+
+MAXCON = 10     # max connection queues to hold
+MAXBUF = 4096   # buffer size
+root_key = "./ca.key"
+root_crt = "./ca.crt"
+
 '''
 #create key
 key = open("ca.key","w")
@@ -295,6 +301,8 @@ class ProxyRequestHandler:
             '''
             CN = None
             AN = []
+            #print real_cert
+
             if real_cert["subject"][-1][0][0] == 'commonName':
                 CN = real_cert["subject"][-1][0][1]
                 print "COMMONNAMEFOUND"+str(CN)
@@ -338,6 +346,7 @@ class ProxyRequestHandler:
             #pass cert from client with request
             '''
             #self.sem_lock.release()
+
 
 
         else:
