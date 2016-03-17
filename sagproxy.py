@@ -13,18 +13,17 @@ import OpenSSL
 from OpenSSL import crypto
 import random
 import select
+import shutil
+global log
+global req_cnt
+req_cnt = 1
+
 MAXCON = 10     # max connection queues to hold
 MAXBUF = 4096   # buffer size
 root_key = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.key"
-#= os.path.join(os.path.dirname(__file__), 'ca.key')
-root_cert = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.crt"
-#= os.path.join(os.path.dirname(__file__), 'ca.cert')
-
-
-MAXCON = 10     # max connection queues to hold
-MAXBUF = 4096   # buffer size
-root_key = "./ca.key"
-root_crt = "./ca.crt"
+root_key = os.path.join(os.path.dirname(__file__), 'ca.key')
+#root_cert = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.crt"
+root_cert = os.path.join(os.path.dirname(__file__), 'ca.cert')
 
 '''
 #create key
@@ -48,7 +47,7 @@ certificate.close()
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 log = False
-
+DEFAULT_LOG_FILE_DIR = "log_mproxy"
 
 # exit codes
 SUCCESS = 0     # operation successful
@@ -61,9 +60,10 @@ OPNALWD = 6     # operation not allowed by server
 GENERR = 7      # generic error
 
 
+
 class ProxyRequestHandler:
 
-    def __init__(self, port, numworker, timeout):
+    def __init__(self, port, numworker, timeout, log):
         #super(ProxyRequestHandler, self).__init__()
         self.port = port
         self.numworker = numworker  #handle numworker with max and block
@@ -72,33 +72,117 @@ class ProxyRequestHandler:
         #self.masterQ = Queue.Queue()
         #self.counter = self.Counter()
         #self.active = []
+        #log_path = os.path.dirname(os.path.abspath(__file__)) + '/../xueban.log'
         self.timeout = timeout
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        #self.server.setblocking(0)
-        self.thread_iterator = 0
-        self.lock = threading.Lock()
+        if log:
+            self.log = log
+        #self.wr_lock = threading.Semaphore(1)
 
-    class Counter(object):
-        def __init__(self, start=0):
-            self.lock = threading.Lock()
-            self.value = start
-        def increment(self):
-            logging.debug('Waiting for lock')
-            self.lock.acquire()
-            try:
-                logging.debug('Acquired lock')
-                self.value = self.value + 1
-            finally:
-                self.lock.release()
+        #self.req_cnt = 1
+        #self.rep_cnt = 1
+        #self.req_log = '1'
+        #self.ip_log = ''
+        #self.host_log = ''
+        #self.name_log = ""
+    def wr_append_log(self, client_IP, hostname, data, flag):
+        #self.wr_lock.acquire()
+        req_log = '1' #str(self.req_cnt)
+        log_cnt = 1
+        name_log = req_log + '_' + client_IP + '_www.' + hostname
+        log_path = self.log + '/' + name_log
+        log_file = None
+        #new first request
+        if not os.path.isfile(log_path): #and flag is False:
+            log_file = open(log_path, 'w')
+            log_file.write(data)
+            #print "got here 420\n"
+            #self.req_cnt += self.req_cnt
+        else:
+            while (os.path.isfile(log_path)):
+                log_cnt += log_cnt
+                req_log = str(log_cnt)
+                name_log = req_log + '_' + client_IP + '_www.' + hostname
+                log_path = self.log + '/' + name_log
+            log_file = open(log_path, 'a')
+            log_file.write(data)
+        log_file.close()
+    def end_wr_append_log(self, client_IP, hostname, data, flag):
+        log_cnt = 1
+        req_log = '1'
+        name_log = req_log + '_' + client_IP + '_www.' + hostname
+        log_path = self.log + '/' + name_log
+        #log_file = None
+        log_file = open(log_path, 'a')
+        #log_file.write(data)
+        while (os.path.isfile(log_path)):
+            log_cnt += log_cnt
+            req_log = str(log_cnt)
+            name_log = req_log + '_' + client_IP + '_www.' + hostname
+            log_path = self.log + '/' + name_log
+        #log_file = open(log_path, 'a')
+        #log_file.write(data)
+        if not os.path.isfile(log_path):
+            print "\n\nPASSED\n\n "
+            tmp = name_log.split('_')
+            tmp_int = int(tmp[0]) - 1 #tmp[0]
+            tmp_log = str(tmp_int)
+            tmp_log = tmp_log + '_' + client_IP + '_www.' + hostname
+            tmp_path = self.log + '/' + tmp_log
+            log_file = open(tmp_path, 'a')
+            log_file.write(data)
+
+        else:
+            print "\n\nFAILED!\n\n "
+            pass
+
+        log_file.close()
+        #self.wr_lock.acquire()
+        '''
+        while (os.path.isfile(log_path)):
+            log_cnt += log_cnt
+            req_log = str(log_cnt)
+            name_log = req_log + '_' + client_IP + '_www.' + hostname
+            log_path = self.log + '/' + name_log
+        if flag:
+            #tmp = name_log.split('_')
+            tmp_ind = log_cnt - 1
+            tmp_log = str(tmp_ind)
+            name_tmp = tmp_log + '_' + client_IP + '_www.' + hostname
+            log_path = self.log + '/' + name_tmp
+            log_file = open(log_path, 'a')
+            log_file.write(data)
+            print "got here 1\n"
+        '''
+        #exisiting file
+
+        #self.wr_lock.release()
+                #self.req_cnt += self.req_cnt
+                #self.req_log = str(self.req_cnt)
+                #self.name_log = self.req_log + '_' + client_IP + '_' + hostname
+                #log_path = log + '/' + name_log
+
+                #req_log = '1'
+            #tmp = self.name_log.split('_')
+            #if tmp[2] is hostname: #and tmp[0] is not :
+
+            #self.req_log = str(self.req_cnt)
+
+            #log_file = open(log_path, 'a')
+        #log_
+        '''
+        log_file = open(self.name_log, "a")
+        try:
+            log_file.write(req)
+        finally:
+            log_file.close()
+        '''
     def run(self):
-        #log_msg('Starting HTTP proxy server...', 'debug')
         try:
             self.server.bind(('', self.port))
-            #log_msg('HTTP proxy server successfully binds to port %d' % self.port, 'debug')
             self.server.listen(MAXCON)
             #self.sem_lock = threading.Semaphore(value = numworker)
-            #log_msg('HTTP proxy server listening on port %d' % self.port, 'debug')
         except socket.error, (value, message):
             if self.server:
                 self.server.close()
@@ -131,16 +215,17 @@ class ProxyRequestHandler:
 
         self.server.close()
     def handle_proxy_request(self, conn, addr):
-        #self.sem_lock.acquire() #blocking = False
+        #if self.numworker is not 10:
+        self.sem_lock.acquire()#blocking = False)
         #self.server.setblocking(0)
         #ready = select.select([self.server], [], [], self.timeout)
         #if ready[0]:
             #data = conn.recv(MAXBUF)
         #data = self.Recv(self.server)
-        #log_msg(data, 'info')
         #print "hello"
         client_IP = addr[0]
-
+        #print "LALA"
+        #print client_IP
 
         if self.timeout is not -1:
             conn.settimeout(self.timeout)
@@ -150,22 +235,31 @@ class ProxyRequestHandler:
             data = conn.recv(MAXBUF)
         hostname, port = None, None
         hostname, port = self.parse(hostname,port,data)
-        #log_msg('port : %d' % port, 'debug')
-        #log_msg('host : %s' % hostname, 'debug')
-        #log_msg('addr : %d' % addr, 'debug')
+
+
+        if log:
+            #self.wr_lock.acquire()
+            flag = False
+            self.wr_append_log(client_IP, hostname, data, flag)
+
 
         if hostname is None or port is None:
             pass
-
         elif port == 443:
             print "Connect to HTTPS:", hostname, port
             conn.send("HTTP/1.1 200 OK\r\n\r\n")
+            real_data = ""
             if self.timeout is not -1:
                 conn.settimeout(self.timeout)
                 real_data = conn.recv(MAXBUF, socket.MSG_PEEK)
                 conn.settimeout(None)
             else:
                 real_data = conn.recv(MAXBUF, socket.MSG_PEEK)
+                #print real_data
+            #if self.log:
+                #flag = True
+                #self.wr_append_log(client_IP, hostname, real_data, flag)
+
             SNI = None
             if real_data.startswith('\x16\x03'):
                 stream = io.BytesIO(real_data)
@@ -212,17 +306,19 @@ class ProxyRequestHandler:
             CN_star = ""
             if real_cert["subject"][-1][0][0] == 'commonName':
                 #print l[:2]
+                '''
                 CN_star = real_cert["subject"][-1][0][1]
-                print "init:"
+                #print "init:"
                 print CN_star
                 print CN_star[:2]
                 if CN_star[:2] is "*.":
                     s_ll = len(CN_star)
                     CN_star = CN_star[2:s_ll]
-                    print "MID: "
+                    #print "MID: "
                     print CN_star
-                #CN = real_cert["subject"][-1][0][1]
-                CN = CN_star
+                '''
+                CN = real_cert["subject"][-1][0][1]
+                #CN = CN_star
                 print "COMMONNAMEFOUND"+str(CN)
             else:
                 CN = hostname
@@ -258,8 +354,8 @@ class ProxyRequestHandler:
                 AN_tmp_list += l
                 i = i + 1
             AN_tmp_list = AN_tmp_list[:-1]
-            #print "AN_tmp_list: "
-            #print AN_tmp_list
+            print "AN_tmp_list: "
+            print AN_tmp_list
 
             #print "CERT_NAME:"
             #print cert_name
@@ -267,33 +363,86 @@ class ProxyRequestHandler:
             cert_name = SNI + ".crt"
             key_name = SNI + ".key"
             csr_name = SNI + ".csr"
+            cert_dir_name = "certs/" + cert_name
+            key_dir_name = "certs/" + key_name
             #openssl_key = "openssl genrsa 1024 -out certs/" + key_name #SNI + ".key 2048"
-            openssl_key = "openssl genrsa -out certs/" + key_name + " 2048"
+
+            #commands
+            '''
+            "openssl genrsa -out certs/" + key_name + " 1024"
+            "openssl req -new -subj '/CN=" + CN + "' -key certs/" + key_name + " -out certs/" + csr_name
+            "openssl x509 -req -days 365 -extfile dig.conf -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+            '''
+
+            #keygen
+            openssl_key = "openssl genrsa -out certs/" + key_name + " 1024"
             key_status = subprocess.check_call(openssl_key, shell = True)
-            #csr_gen = "openssl req -new -subj '/CN=" + common_name + "/subjectAltName=" + alt_names + "' -key certs/" + key_name + " -out certs/" + csr_name
+
+
+            #WITH AN IN COMMANDLINE
             #openssl_csr = "openssl req -new -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key certs/" + key_name + " -out certs/" + csr_name
-            openssl_csr = "openssl req -new -subj '/CN=" + CN + "/subjectAltName=" + AN_tmp_list + "' -key certs/" + key_name + " -out certs/" + csr_name
+
+            #WITHOUT AN IN COMMANDLINE INSTEAD IN .CONF FILE
+            openssl_csr = "openssl req -new -subj '/CN=" + CN + "' -key certs/" + key_name + " -out certs/" + csr_name
+
             csr_status = subprocess.check_call(openssl_csr, shell = True)
-            #crt_gen = "openssl x509 -req -days 365 -in certs/" + csr_name + " -CA mycert.crt -CAkey mycert.key -set_serial 0x12345 -out certs/" + cert_name
-            openssl_crt = "openssl x509 -req -days 365 -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+
+            #WITH AN IN COMMANDLINE
+            #openssl_crt = "openssl x509 -req -days 365 -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+
+            #WITHOUT AN IN COMMANDLINE INSTEAD IN .CONF FILE
+            conf_name = SNI + ".conf"
+            shutil.copy2("template.conf",conf_name)
+            fp = open(conf_name,"a")
+            tmp = []
+
+            tmp = AN_tmp_list.split(',')
+            for l in tmp:
+                fp.write(l)
+                fp.write('\n')
+            fp.close()
+
+            #hardcode
+            #openssl_crt = "openssl x509 -req -days 365 -extensions v3_req -extfile google.conf -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+
+            openssl_crt = "openssl x509 -req -days 365 -extensions v3_req -extfile " conf_name " -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+
             #openssl_crt = "openssl x509 req -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -CAcreateserial -out certs/" + cert_name + " -days 365"
             crt_status = subprocess.check_call(openssl_crt, shell = True)
             #openssl_crt = "openssl req -new -x509 -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key ca.key -out certs/" + cert_name
             #ostatus = subprocess.check_call(openssl_crt, shell = True)
-            cert_dir_name = "certs/" + cert_name
 
-            key_dir_name = "certs/" + key_name
+
             #print "FAKE CERT PATH: "
             #print cert_dir_name
-            fake_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH) #ssl.create_default_context() #ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            fake_context.load_cert_chain(certfile=cert_dir_name, keyfile=key_dir_name)#"ca.key")
-            fake_context.verify_mode = ssl.CERT_OPTIONAL
-            fake_proxy_socket = fake_context.wrap_socket(conn,server_side=True, do_handshake_on_connect=True)#, server_hostname = client_IP)#, certfile = "ca.crt", keyfile = "ca.key")#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
-            fake_cert = fake_proxy_socket.getpeercert()
-            print "FAKE _CERT: "
-            print fake_cert
-            print "HELLO"
 
+            fake_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH) #ssl.create_default_context() #ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            fake_context.load_cert_chain(certfile = cert_dir_name, keyfile=key_dir_name)#= ccert ,keyfile = kkey)#cert_dir_name, keyfile=key_dir_name)#"ca.key")
+            fake_context.verify_mode = ssl.CERT_NONE
+            fake_proxy_socket = fake_context.wrap_socket(conn,server_side=True, do_handshake_on_connect=True)#certfile = cert_dir_name, keyfile = key_dir_name, do_handshake_on_connect=True)#, server_hostname = client_IP)#, certfile = "ca.crt", keyfile = "ca.key")#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
+            #fake_proxy_socket.do_handshake()
+            #fake_cert = fake_proxy_socket.getpeercert()
+            #print "FAKE _CERT: "
+            #print fake_cert
+            print "HELLO"
+            ssl_req_data = conn.recv(MAXBUF)
+            print "DATA:"
+            print ssl_req_data
+            '''
+            while 1:
+                ssl_req_data = conn.recv(MAXBUF)
+                if (len(ssl_req_data) > 0):
+                    proxy_socket.send(ssl_req_data)
+                else:
+                    break
+            while 1:
+                ssl_rec_data = proxy_socket.recv(MAXBUF)
+                if (len(ssl_req_data) > 0):
+                    conn.send(ssl_rec_data)
+                else:
+                    break
+            #proxy_socket.send(ssl_req_data)
+            '''
             real_proxy_socket.close()
             fake_proxy_socket.close()
             proxy_socket.close()
@@ -301,8 +450,6 @@ class ProxyRequestHandler:
             '''
             CN = None
             AN = []
-            #print real_cert
-
             if real_cert["subject"][-1][0][0] == 'commonName':
                 CN = real_cert["subject"][-1][0][1]
                 print "COMMONNAMEFOUND"+str(CN)
@@ -348,15 +495,17 @@ class ProxyRequestHandler:
             #self.sem_lock.release()
 
 
-
         else:
             print "Connect to HTTP:", hostname, port
+            IP = socket.gethostbyname(hostname)
+            print "IP :" + IP
             try:
                 proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 proxy_socket.connect((unicode(hostname), port))
                 #proxy_socket.connect((hostname, port))
                 proxy_socket.send(data)
                 #send http request from proxy
+                reply = ""
                 while 1:
                     if self.timeout is not -1:
                         proxy_socket.settimeout(self.timeout)
@@ -364,7 +513,10 @@ class ProxyRequestHandler:
                         proxy_socket.settimeout(None)
                     else:
                         reply = proxy_socket.recv(MAXBUF)
-                    #log_msg(reply, 'info')
+                    if log:
+                        #self.wr_lock.release()
+                        flag = False
+                        self.end_wr_append_log(client_IP, hostname, reply, flag)
                     if (len(reply) > 0):
                         conn.send(reply)
                     else:
@@ -377,9 +529,11 @@ class ProxyRequestHandler:
                 if conn:
                     conn.close()
                 print "RUNTIME ERROR: ", message
+                self.sem_lock.release()
                 sys.exit(1)
             #self.sem_lock.release()
-        #self.sem_lock.release()
+        #if self.numworker is not 10:
+        self.sem_lock.release()
     def parse(self, hostname, port, data):
         try:
             first_line = data.split('\n')[0]
@@ -405,19 +559,13 @@ class ProxyRequestHandler:
             pass
         return hostname, port
 
-# logs info message if logging is set to True, or logs msg as debug
-def log_msg(msg, l_type):
-    if log is True and l_type is 'info':
-        logger.info(msg)
-    else:
-        logger.debug(msg)
+
 # logs exit message and closes program with exit code
 def exit_msg(msg, num):
-    log_msg('Program exited with code : %d ( %s )' % (num, msg), 'debug')
-    sys.exit(num)
+    #message('Program exited with code : %d ( %s )' % (num, msg), 'debug')
+    sys.exit(0)
 
 if __name__ == '__main__':
-    #global log
     numworker = 10
     timeout = -1
     parseargs = argparse.ArgumentParser()
@@ -437,7 +585,7 @@ if __name__ == '__main__':
                            default=-1, type=int,
                            help='specify time to wait for server response, default = infinite ( -1 )')
     parseargs.add_argument('-l', '--log',
-                           action='store_true',
+                           type=str,
                            help='specify whether to log request / response exchanges')
     args = parseargs.parse_args()
 
@@ -446,7 +594,10 @@ if __name__ == '__main__':
     elif args.numworker < 1 or args.numworker > 255:
         exit_msg('Invalid number of worker threads : %d' % args.numworker, SYNERR)
 
-    if args.log is True:
+    if args.log:
         log = True
-    proxy = ProxyRequestHandler(args.port, args.numworker, args.timeout)
+        log_dir_cmd = "mkdir " + args.log
+        os.system(log_dir_cmd)
+
+    proxy = ProxyRequestHandler(args.port, args.numworker, args.timeout, args.log)
     proxy.run()
