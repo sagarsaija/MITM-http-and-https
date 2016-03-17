@@ -21,10 +21,45 @@ req_cnt = 1
 MAXCON = 10     # max connection queues to hold
 MAXBUF = 4096   # buffer size
 root_key = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.key"
-root_key = os.path.join(os.path.dirname(__file__), 'ca.key')
+#root_key = os.path.join(os.path.dirname(__file__), 'ca.key')
 #root_cert = "/fs/student/sagarsaija/cs176b/hw3/github_hw3/ca.crt"
-root_cert = os.path.join(os.path.dirname(__file__), 'ca.cert')
+#oot_cert = os.path.join(os.path.dirname(__file__), 'ca.cert')
+#ROOT KEY GEN
+#X509_EXTRA_ARGS = ()
+OPENSSL_CONFIG_TEMPLATE = """
+prompt = no
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+[ req_distinguished_name ]
+C                      = US
+ST                     = CA
+L                      = Goleta
+O                      = Ghandi Inc.
+OU                     = Domain India
+CN                     =
+emailAddress           = sagarsaija@yahoo.com
+[ v3_req ]
+# Extensions to add to a certificate request
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+[ alt_names ]
 
+"""
+
+'''
+root_key_cmd = "openssl genrsa -out keys/ca.key 1024"
+crt_root_key = subprocess.check_call(root_key_cmd, shell = True)
+root_cert_cmd = "openssl req -x509 -new -nodes -key keys/ca.key -days 3650 -out certs/ca.pem"
+crt_root_cert = subprocess.check_call(root_cert_cmd, shell = True)
+
+root_cert_cmd = "openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout keys/ca.key -out certs/ca.crt -reqexts v3_req -extensions v3_ca"
+crt_root_cert = subprocess.check_call(root_cert_cmd, shell = True)
+'''
+
+#ANDRIOD HARDCODE CONVERT
+#root_der_cert_cmd = "openssl x509 -in certs/ca.pem -outform der -out certs/ca.der.crt"
+#crt_root_cert = subprocess.check_call(root_der_cert_cmd, shell = True)
 '''
 #create key
 key = open("ca.key","w")
@@ -319,7 +354,7 @@ class ProxyRequestHandler:
                 '''
                 CN = real_cert["subject"][-1][0][1]
                 #CN = CN_star
-                print "COMMONNAMEFOUND"+str(CN)
+                #print "COMMONNAMEFOUND"+str(CN)
             else:
                 CN = hostname
             if real_cert.has_key("subjectAltName"):
@@ -354,45 +389,106 @@ class ProxyRequestHandler:
                 AN_tmp_list += l
                 i = i + 1
             AN_tmp_list = AN_tmp_list[:-1]
-            print "AN_tmp_list: "
-            print AN_tmp_list
+            #print "AN_tmp_list: "
+            #print AN_tmp_list
 
             #print "CERT_NAME:"
             #print cert_name
             #"openssl", "genrsa", "1024"
-            cert_name = SNI + ".crt"
-            key_name = SNI + ".key"
-            csr_name = SNI + ".csr"
-            cert_dir_name = "certs/" + cert_name
-            key_dir_name = "certs/" + key_name
+
             #openssl_key = "openssl genrsa 1024 -out certs/" + key_name #SNI + ".key 2048"
 
+            '''
+            #OPENSSL commands
+
+            #keygen
+            openssl_key = "openssl genrsa -out keys/" + key_name + " 1024" #4096
+            key_status = subprocess.check_call(openssl_key, shell = True)
+            if not os.path.exists(cert_dir_name):
+                #key = OpenSSL.crypto.PKey()
+                #key.generate_key(OpenSSL.crypto.TYPE_RSA, 1024)
+
+                cert = OpenSSL.crypto.X509()
+                cert.set_version(3)
+                cert.get_subject().CN = CN
+                cert.set_pubkey(openssl_key)
+                cert.set_serial_number(random.randint(0, 2**20))
+                # Use a huge range so we dont have to worry about bad clocks
+                cert.set_notBefore("19300101000000+0000")
+                cert.set_notAfter("203012310000+0000")
+                cert.set_issuer(self.cert.get_subject())
+                if san:
+                    cert.add_extensions([san])
+                cert.sign(self.key, 'sha1')
+                with open(cert_dir_name, 'w') as f:
+                    f.write(
+                        OpenSSL.crypto.dump_privatekey(
+                            OpenSSL.crypto.FILETYPE_PEM,
+                            openssl_key))
+                    f.write(
+                        OpenSSL.crypto.dump_certificate(
+                            OpenSSL.crypto.FILETYPE_PEM,
+                            cert))
+                    f.write(
+                        OpenSSL.crypto.dump_certificate(
+                            OpenSSL.crypto.FILETYPE_PEM,
+                            root_cert))
+            '''
             #commands
             '''
             "openssl genrsa -out certs/" + key_name + " 1024"
             "openssl req -new -subj '/CN=" + CN + "' -key certs/" + key_name + " -out certs/" + csr_name
             "openssl x509 -req -days 365 -extfile dig.conf -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+            "openssl genrsa -out certs/key_name 1024"
+            "openssl req -new -subj '/CN=" + CN + "' -key certs/key_name -out certs/csr_name"
+            "openssl x509 -req -days 365 -extfile SANconf -in certs/csr_name -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/cert_name"
             '''
-
+            cert_name = SNI + ".crt"
+            key_name = SNI + ".key"
+            csr_name = SNI + ".csr"
+            cert_dir_name = "certs/" + cert_name
+            key_dir_name = "keys/" + key_name
+            #root_cert = "certs/ca.pem"
+            #root_key = "certs/ca.key"
+            root_cert = "ca.cert"
+            root_key = "ca.key"
             #keygen
-            openssl_key = "openssl genrsa -out certs/" + key_name + " 1024"
-            key_status = subprocess.check_call(openssl_key, shell = True)
-
-
-            #WITH AN IN COMMANDLINE
-            #openssl_csr = "openssl req -new -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key certs/" + key_name + " -out certs/" + csr_name
-
-            #WITHOUT AN IN COMMANDLINE INSTEAD IN .CONF FILE
-            openssl_csr = "openssl req -new -subj '/CN=" + CN + "' -key certs/" + key_name + " -out certs/" + csr_name
-
-            csr_status = subprocess.check_call(openssl_csr, shell = True)
-
-            #WITH AN IN COMMANDLINE
-            #openssl_crt = "openssl x509 -req -days 365 -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+            if not os.path.exists(key_dir_name):
+                openssl_key = "openssl genrsa -out keys/" + key_name + " 1024" #4096
+                key_status = subprocess.check_call(openssl_key, shell = True)
 
             #WITHOUT AN IN COMMANDLINE INSTEAD IN .CONF FILE
             conf_name = SNI + ".conf"
-            shutil.copy2("template.conf",conf_name)
+            tmp_conf_name = "tmp" + SNI + ".conf"
+            #shutil.copy2("template.conf", tmp_conf_name)
+            shutil.copy2("temp.conf", tmp_conf_name)
+
+
+            #put CN in CN line
+            '''
+            fps = open(conf_name,"r+")
+            counter = 0
+            tmp_l = []
+            ret_l = ''
+            for l in fps.readlines():
+                counter += 1
+                if counter is 11:
+                    #tmp_l = l.split('=')
+                    #ret_l = ' ' + SNI
+            '''
+            repl_str = "CN                     = " + CN + "\n"
+            def replace_line(file_name, line_num, text):
+                lines = open(file_name, 'r').readlines()
+                lines[line_num] = text
+                out = open(file_name, 'w+')
+                out.writelines(lines)
+                #out.writelines("\n")
+                out.close()
+            replace_line(tmp_conf_name, 9, repl_str)
+
+
+            #shutil.copy2("template.conf",conf_name)
+            shutil.copy2(tmp_conf_name,conf_name)
             fp = open(conf_name,"a")
             tmp = []
 
@@ -402,25 +498,54 @@ class ProxyRequestHandler:
                 fp.write('\n')
             fp.close()
 
+            #WITH AN IN COMMANDLINE
+            #openssl_csr = "openssl req -new -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key certs/" + key_name + " -out certs/" + csr_name
+
+            #WITHOUT AN IN COMMANDLINE INSTEAD IN .CONF FILE
+            #openssl_csr = "openssl req -new -subj '/CN=" + CN + "' -key keys/" + key_name + " -out certs/" + csr_name
+            #openssl_csr = "openssl req -new -key keys/" + key_name + " -out certs/" + csr_name + " -config " + conf_name
+            openssl_csr = "openssl req -new -key keys/" + key_name + " -out certs/" + csr_name + " -config " + conf_name
+            csr_status = subprocess.check_call(openssl_csr, shell = True)
+
+            #WITH AN IN COMMANDLINE
+            #openssl_crt = "openssl x509 -req -days 365 -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+
+
+
             #hardcode
             #openssl_crt = "openssl x509 -req -days 365 -extensions v3_req -extfile google.conf -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+            #"openssl x509 -req -in existing.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out existing.crt -days 3649"
+            #openssl_crt = "openssl x509 -req -extfile " + conf_name + " -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -CAcreateserial -out certs/" + cert_name + " -days 3649"
+            #openssl_crt = "openssl x509 -req -days 3649 -extensions v3_req -extfile " + conf_name + " -in certs/" + csr_name + " -CA certs/ca.crt -CAkey certs/ca.key -set_serial 0x12345 -out certs/" + cert_name
 
-            openssl_crt = "openssl x509 -req -days 365 -extensions v3_req -extfile " conf_name " -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
+            openssl_crt = "openssl x509 -req -days 3546 -in certs/" + csr_name + " -CA ca.cert -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name + " -extensions v3_req -extfile " + conf_name #+ " *X509_EXTRA_ARGS"
 
             #openssl_crt = "openssl x509 req -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -CAcreateserial -out certs/" + cert_name + " -days 365"
             crt_status = subprocess.check_call(openssl_crt, shell = True)
+
             #openssl_crt = "openssl req -new -x509 -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key ca.key -out certs/" + cert_name
             #ostatus = subprocess.check_call(openssl_crt, shell = True)
 
+            #ricky hard code gooogle
+            #openssl_key = ""
+            #key_status = subprocess.check_call(openssl_key, shell = True)
+
+            #openssl_crt = "openssl x509 -req -in www.google.com.csr -sha256 -CA ca.crt -CAkey ca.key -CAcreateserial -out www.google.com.crt -days 365"
+            #ostatus = subprocess.check_call(openssl_crt, shell = True)
 
             #print "FAKE CERT PATH: "
             #print cert_dir_name
 
             fake_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH) #ssl.create_default_context() #ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            fake_context.load_cert_chain(certfile = cert_dir_name, keyfile=key_dir_name)#= ccert ,keyfile = kkey)#cert_dir_name, keyfile=key_dir_name)#"ca.key")
-            fake_context.verify_mode = ssl.CERT_NONE
-            fake_proxy_socket = fake_context.wrap_socket(conn,server_side=True, do_handshake_on_connect=True)#certfile = cert_dir_name, keyfile = key_dir_name, do_handshake_on_connect=True)#, server_hostname = client_IP)#, certfile = "ca.crt", keyfile = "ca.key")#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
-            #fake_proxy_socket.do_handshake()
+            fake_context.load_cert_chain(certfile = cert_dir_name, keyfile = key_dir_name) #"ca.key")#_dir_name, keyfile=key_dir_name)#= ccert ,keyfile = kkey)#cert_dir_name, keyfile=key_dir_name)#"ca.key")
+            #fake_context.verify_mode = ssl.CERT_OPTIONAL #ssl.CERT_OPTIONAL_NO_VERIFY#ssl.CERT_NONE
+            fake_proxy_socket = fake_context.wrap_socket(conn,server_side=True)#, do_handshake_on_connect=True , certfile = cert_dir_name, keyfile = key_dir_name)#, do_handshake_on_connect=True)#, server_hostname = client_IP)#, certfile = "ca.crt", keyfile = "ca.key")#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
+            #fake_proxy_socket.ssl_verify_cert_chain()
+            try:
+                fake_proxy_socket.do_handshake()
+            except ssl.SSLError, err:
+                if err.args[1].find("sslv3 alert") == -1:
+                    raise
             #fake_cert = fake_proxy_socket.getpeercert()
             #print "FAKE _CERT: "
             #print fake_cert
