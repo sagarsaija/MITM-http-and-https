@@ -84,35 +84,24 @@ logger = logging.getLogger(__name__)
 log = False
 DEFAULT_LOG_FILE_DIR = "log_mproxy"
 
-# exit codes
-SUCCESS = 0     # operation successful
-CONNFL = 1      # can't connect to server
-AUTHFL = 2      # authentication failed
-FLNFND = 3      # file not found
-SYNERR = 4      # syntax error in client request
-CMDNIMP = 5     # command not implemented by server
-OPNALWD = 6     # operation not allowed by server
-GENERR = 7      # generic error
+
 
 
 
 class ProxyRequestHandler:
 
-    def __init__(self, port, numworker, timeout, log):
+    def __init__(self, port, log, numworker, timeout):
         #super(ProxyRequestHandler, self).__init__()
         self.port = port
-        self.numworker = numworker  #handle numworker with max and block
-        self.sem_lock = threading.Semaphore(self.numworker)
-        #self.workerQ = Queue.Queue()
-        #self.masterQ = Queue.Queue()
-        #self.counter = self.Counter()
-        #self.active = []
-        #log_path = os.path.dirname(os.path.abspath(__file__)) + '/../xueban.log'
-        self.timeout = timeout
-        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if log:
             self.log = log
+        self.numworker = numworker  #handle numworker with max and block
+        self.sem_lock = threading.Semaphore(self.numworker)
+        self.timeout = timeout
+
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
         #self.wr_lock = threading.Semaphore(1)
 
         #self.req_cnt = 1
@@ -159,7 +148,7 @@ class ProxyRequestHandler:
         #log_file = open(log_path, 'a')
         #log_file.write(data)
         if not os.path.isfile(log_path):
-            print "\n\nPASSED\n\n "
+            #print "\n\nPASSED\n\n "
             tmp = name_log.split('_')
             tmp_int = int(tmp[0]) - 1 #tmp[0]
             tmp_log = str(tmp_int)
@@ -169,9 +158,8 @@ class ProxyRequestHandler:
             log_file.write(data)
 
         else:
-            print "\n\nFAILED!\n\n "
+            #print "\n\nFAILED!\n\n "
             pass
-
         log_file.close()
         #self.wr_lock.acquire()
         '''
@@ -259,7 +247,7 @@ class ProxyRequestHandler:
         #data = self.Recv(self.server)
         #print "hello"
         client_IP = addr[0]
-        #print "LALA"
+        #print "client_IP:"
         #print client_IP
 
         if self.timeout is not -1:
@@ -314,7 +302,7 @@ class ProxyRequestHandler:
                     if etype == 0:
                         server_name = edata[5:]
                         SNI = server_name
-            #rint "SNI: " #SNI
+            #print "SNI: " #SNI
             #print SNI
             if SNI is None:
                 SNI = hostname
@@ -340,20 +328,7 @@ class ProxyRequestHandler:
             AN = []
             CN_star = ""
             if real_cert["subject"][-1][0][0] == 'commonName':
-                #print l[:2]
-                '''
-                CN_star = real_cert["subject"][-1][0][1]
-                #print "init:"
-                print CN_star
-                print CN_star[:2]
-                if CN_star[:2] is "*.":
-                    s_ll = len(CN_star)
-                    CN_star = CN_star[2:s_ll]
-                    #print "MID: "
-                    print CN_star
-                '''
                 CN = real_cert["subject"][-1][0][1]
-                #CN = CN_star
                 #print "COMMONNAMEFOUND"+str(CN)
             else:
                 CN = hostname
@@ -366,25 +341,9 @@ class ProxyRequestHandler:
             #print CN
             #print "AN :"
             #print AN
-            '''
-            AN_tmp_list = []
-            for i in AN:
-                AN_tmp_list.append("DNS%s=" % i)
-                #: %s" % i)
-            AN_tmp_list = ", ".join(AN_tmp_list)
-            '''
             AN_tmp_list = ""
             i = 1
             for l in AN:
-                #if AN[-1:]:
-                    #l = "DNS." + str(i) + "=" + l
-                #else:
-                '''
-                print l[:2]
-                if l[:2] is "*.":
-                    ll = len(l)
-                    l = l[2:ll]
-                '''
                 l = "DNS." + str(i) + "=" + l + ","
                 AN_tmp_list += l
                 i = i + 1
@@ -397,52 +356,6 @@ class ProxyRequestHandler:
             #"openssl", "genrsa", "1024"
 
             #openssl_key = "openssl genrsa 1024 -out certs/" + key_name #SNI + ".key 2048"
-
-            '''
-            #OPENSSL commands
-
-            #keygen
-            openssl_key = "openssl genrsa -out keys/" + key_name + " 1024" #4096
-            key_status = subprocess.check_call(openssl_key, shell = True)
-            if not os.path.exists(cert_dir_name):
-                #key = OpenSSL.crypto.PKey()
-                #key.generate_key(OpenSSL.crypto.TYPE_RSA, 1024)
-
-                cert = OpenSSL.crypto.X509()
-                cert.set_version(3)
-                cert.get_subject().CN = CN
-                cert.set_pubkey(openssl_key)
-                cert.set_serial_number(random.randint(0, 2**20))
-                # Use a huge range so we dont have to worry about bad clocks
-                cert.set_notBefore("19300101000000+0000")
-                cert.set_notAfter("203012310000+0000")
-                cert.set_issuer(self.cert.get_subject())
-                if san:
-                    cert.add_extensions([san])
-                cert.sign(self.key, 'sha1')
-                with open(cert_dir_name, 'w') as f:
-                    f.write(
-                        OpenSSL.crypto.dump_privatekey(
-                            OpenSSL.crypto.FILETYPE_PEM,
-                            openssl_key))
-                    f.write(
-                        OpenSSL.crypto.dump_certificate(
-                            OpenSSL.crypto.FILETYPE_PEM,
-                            cert))
-                    f.write(
-                        OpenSSL.crypto.dump_certificate(
-                            OpenSSL.crypto.FILETYPE_PEM,
-                            root_cert))
-            '''
-            #commands
-            '''
-            "openssl genrsa -out certs/" + key_name + " 1024"
-            "openssl req -new -subj '/CN=" + CN + "' -key certs/" + key_name + " -out certs/" + csr_name
-            "openssl x509 -req -days 365 -extfile dig.conf -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
-            "openssl genrsa -out certs/key_name 1024"
-            "openssl req -new -subj '/CN=" + CN + "' -key certs/key_name -out certs/csr_name"
-            "openssl x509 -req -days 365 -extfile SANconf -in certs/csr_name -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/cert_name"
-            '''
             cert_name = SNI + ".crt"
             key_name = SNI + ".key"
             csr_name = SNI + ".csr"
@@ -465,17 +378,6 @@ class ProxyRequestHandler:
 
 
             #put CN in CN line
-            '''
-            fps = open(conf_name,"r+")
-            counter = 0
-            tmp_l = []
-            ret_l = ''
-            for l in fps.readlines():
-                counter += 1
-                if counter is 11:
-                    #tmp_l = l.split('=')
-                    #ret_l = ' ' + SNI
-            '''
             repl_str = "CN                     = " + CN + "\n"
             def replace_line(file_name, line_num, text):
                 lines = open(file_name, 'r').readlines()
@@ -499,11 +401,6 @@ class ProxyRequestHandler:
             fp.close()
 
             #WITH AN IN COMMANDLINE
-            #openssl_csr = "openssl req -new -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key certs/" + key_name + " -out certs/" + csr_name
-
-            #WITHOUT AN IN COMMANDLINE INSTEAD IN .CONF FILE
-            #openssl_csr = "openssl req -new -subj '/CN=" + CN + "' -key keys/" + key_name + " -out certs/" + csr_name
-            #openssl_csr = "openssl req -new -key keys/" + key_name + " -out certs/" + csr_name + " -config " + conf_name
             openssl_csr = "openssl req -new -key keys/" + key_name + " -out certs/" + csr_name + " -config " + conf_name
             csr_status = subprocess.check_call(openssl_csr, shell = True)
 
@@ -511,48 +408,41 @@ class ProxyRequestHandler:
             #openssl_crt = "openssl x509 -req -days 365 -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
 
 
-
-            #hardcode
-            #openssl_crt = "openssl x509 -req -days 365 -extensions v3_req -extfile google.conf -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name
-            #"openssl x509 -req -in existing.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out existing.crt -days 3649"
-            #openssl_crt = "openssl x509 -req -extfile " + conf_name + " -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -CAcreateserial -out certs/" + cert_name + " -days 3649"
-            #openssl_crt = "openssl x509 -req -days 3649 -extensions v3_req -extfile " + conf_name + " -in certs/" + csr_name + " -CA certs/ca.crt -CAkey certs/ca.key -set_serial 0x12345 -out certs/" + cert_name
-
             openssl_crt = "openssl x509 -req -days 3546 -in certs/" + csr_name + " -CA ca.cert -CAkey ca.key -set_serial 0x12345 -out certs/" + cert_name + " -extensions v3_req -extfile " + conf_name #+ " *X509_EXTRA_ARGS"
 
             #openssl_crt = "openssl x509 req -in certs/" + csr_name + " -CA ca.crt -CAkey ca.key -CAcreateserial -out certs/" + cert_name + " -days 365"
             crt_status = subprocess.check_call(openssl_crt, shell = True)
 
-            #openssl_crt = "openssl req -new -x509 -subj '/CN" + CN + "/subjectAltName=" + AN_tmp_list + "' -key ca.key -out certs/" + cert_name
-            #ostatus = subprocess.check_call(openssl_crt, shell = True)
-
-            #ricky hard code gooogle
-            #openssl_key = ""
-            #key_status = subprocess.check_call(openssl_key, shell = True)
-
-            #openssl_crt = "openssl x509 -req -in www.google.com.csr -sha256 -CA ca.crt -CAkey ca.key -CAcreateserial -out www.google.com.crt -days 365"
-            #ostatus = subprocess.check_call(openssl_crt, shell = True)
-
-            #print "FAKE CERT PATH: "
-            #print cert_dir_name
-
-            fake_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH) #ssl.create_default_context() #ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            fake_context = ssl.create_default_context(purpose = ssl.Purpose.CLIENT_AUTH) #ssl.create_default_context() #ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            #fake_context.ssl.SSLContext(ssl.PROTOCOL_SSLv3)
             fake_context.load_cert_chain(certfile = cert_dir_name, keyfile = key_dir_name) #"ca.key")#_dir_name, keyfile=key_dir_name)#= ccert ,keyfile = kkey)#cert_dir_name, keyfile=key_dir_name)#"ca.key")
             #fake_context.verify_mode = ssl.CERT_OPTIONAL #ssl.CERT_OPTIONAL_NO_VERIFY#ssl.CERT_NONE
-            fake_proxy_socket = fake_context.wrap_socket(conn,server_side=True)#, do_handshake_on_connect=True , certfile = cert_dir_name, keyfile = key_dir_name)#, do_handshake_on_connect=True)#, server_hostname = client_IP)#, certfile = "ca.crt", keyfile = "ca.key")#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
-            #fake_proxy_socket.ssl_verify_cert_chain()
+            request = None
             try:
+                fake_proxy_socket = fake_context.wrap_socket(conn,server_side=True)#, do_handshake_on_connect=True , certfile = cert_dir_name, keyfile = key_dir_name)#, do_handshake_on_connect=True)#, server_hostname = client_IP)#, certfile = "ca.crt", keyfile = "ca.key")#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
+                #fake_proxy_socket.ssl_verify_cert_chain()
                 fake_proxy_socket.do_handshake()
+                #fake_proxy_socket.settimeout(self.timeout)
+                request = fake_proxy_socket.recv(MAXBUF)
+                try:
+                    print 'decoded: {}'.format(request)
+                except Exception as e:
+                    print e
+                    print request
+            #try:
+
             except ssl.SSLError, err:
                 if err.args[1].find("sslv3 alert") == -1:
                     raise
+            real_proxy_socket.sendall(request)
+            reply = real_proxy_socket.recv(MAXBUF)
             #fake_cert = fake_proxy_socket.getpeercert()
             #print "FAKE _CERT: "
             #print fake_cert
-            print "HELLO"
-            ssl_req_data = conn.recv(MAXBUF)
-            print "DATA:"
-            print ssl_req_data
+            #print "HELLO"
+            #ssl_req_data = conn.recv(MAXBUF)
+            #print "DATA:"
+            #print ssl_req_data
             '''
             while 1:
                 ssl_req_data = conn.recv(MAXBUF)
@@ -572,51 +462,7 @@ class ProxyRequestHandler:
             fake_proxy_socket.close()
             proxy_socket.close()
             conn.close()
-            '''
-            CN = None
-            AN = []
-            if real_cert["subject"][-1][0][0] == 'commonName':
-                CN = real_cert["subject"][-1][0][1]
-                print "COMMONNAMEFOUND"+str(CN)
-            else:
-                CN = hostname
-            if real_cert.has_key("subjectAltName"):
-                for typ, val in real_cert["subjectAltName"]:
-                    if typ == "DNS": #and val == hostname:
-                        AN.append(val)
 
-            #print "CN :"
-            #print CN
-            #print "AN :"
-            #print AN
-            AN_tmp_list = []
-            for i in AN:
-                AN_tmp_list.append("DNS: %s" % i)
-            AN_tmp_list = ", ".join(AN_tmp_list)
-            #print "AN_tmp_list"
-            #print AN_tmp_list
-            #debug generate fake cert using CN, AN, and SNI
-            fake_key = OpenSSL.crypto.PKey()#os.path.expanduser('~/ca.key')#root_key #OpenSSL.crypto.PKey()
-            fake_key.generate_key(OpenSSL.crypto.TYPE_RSA, 1028)
-            #fake_cert = real_cert
-            fake_cert = OpenSSL.crypto.X509()
-            #fake_cert.set_version("3L")
-            fake_cert.set_pubkey(fake_key)
-            fake_cert.get_subject().CN = CN
-            #fake_cert.get_subject().AN = AN
-
-            #load AN to fake_cert
-            #if AN_tmp_list:
-                #fake_cert.add_extensions([crypto.X509Extension("subjectAltName", False, ",".join(AN_tmp_list))])
-            #print fake_cert
-            fake_cert.sign(fake_key, 'sha1')
-            #fake_cert.get_all().
-
-            fake_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            fake_context.verify_mode = ssl.CERT_REQUIRED
-            fake_proxy_socket = fake_context.wrap_socket(self.server, fake_cert,do_handshake_on_connect=True)#, keyfile=p1, certfile=fake_cert, do_handshake_on_connect=True)
-            #pass cert from client with request
-            '''
             #self.sem_lock.release()
 
 
@@ -684,45 +530,28 @@ class ProxyRequestHandler:
             pass
         return hostname, port
 
-
-# logs exit message and closes program with exit code
-def exit_msg(msg, num):
-    #message('Program exited with code : %d ( %s )' % (num, msg), 'debug')
-    sys.exit(0)
-
 if __name__ == '__main__':
     numworker = 10
     timeout = -1
     parseargs = argparse.ArgumentParser()
-    # parseargs.add_argument('-h', '--help',
-    #                        action='store_true',
-    #                        help='display usage information and exit')
-    parseargs.add_argument('-v', '--version',
-                           action='version', version=0.1,
-                           help='print version and author information and exit')
-    parseargs.add_argument('-p', '--port',
-                           type=int, required=True,
-                           help='specify port number server will be listening on')
-    parseargs.add_argument('-n', '--numworker',
-                           default=10, type=int,
-                           help='specify number of workers in thread pool, default = 10')
-    parseargs.add_argument('-t', '--timeout',
-                           default=-1, type=int,
-                           help='specify time to wait for server response, default = infinite ( -1 )')
-    parseargs.add_argument('-l', '--log',
-                           type=str,
-                           help='specify whether to log request / response exchanges')
-    args = parseargs.parse_args()
 
-    if args.port > 65535 or args.port < 1:
-        exit_msg('Invalid port number : %d' % args.port, SYNERR)
-    elif args.numworker < 1 or args.numworker > 255:
-        exit_msg('Invalid number of worker threads : %d' % args.numworker, SYNERR)
+    parseargs.add_argument('-v', '--version', version=0.1, action='version', help='Prints the name of the application, the version number (in this case the version has to be 0.1), the author and exists, returning 0.')
+    parseargs.add_argument('-p', '--port', type=int, required=True, help='Required port your server will be listening on. If the port you try to listen is already occupied, just try another.')
+    parseargs.add_argument('-n', '--numworker', type=int, default=10, help='This parameter specifies the number of workers in the thread pool used for handling concurrent HTTP requests. (default: 10).')
+    parseargs.add_argument('-t', '--timeout', type=int, default=-1, help='Time to wait before giving ip waiting for response form server. Default is one.')
+    parseargs.add_argument('-l', '--log', type=str, help='Logs all the HTTP requests and their corresponding responses under the directory specified by log.')
+    args = parseargs.parse_args()
 
     if args.log:
         log = True
         log_dir_cmd = "mkdir " + args.log
         os.system(log_dir_cmd)
+    if args.port < 1 or args.port > 65535:
+        print "ERROR: Put a port number between 1 and 65535\n"
+        sys.exit(0)
+    if args.numworker < 1 or args.numworker > 255:
+        print "ERROR: Put a number for the workers between 1 and 255\n"
+        sys.exit(0)
 
-    proxy = ProxyRequestHandler(args.port, args.numworker, args.timeout, args.log)
+    proxy = ProxyRequestHandler(args.port, args.log, args.numworker, args.timeout)
     proxy.run()
